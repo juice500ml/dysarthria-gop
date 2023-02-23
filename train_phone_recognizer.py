@@ -12,7 +12,7 @@ from sklearn import metrics
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from transformers import AutoProcessor
+from transformers import Wav2Vec2FeatureExtractor
 
 from dataset import PhoneRecognitionDataset, get_vocab
 from model import Wav2Vec2Recognizer, Wav2Vec2ConvRecognizer
@@ -62,10 +62,10 @@ def _get_logger(tb_path):
 
 
 def _get_collator(model, vocab_to_index, _get_feat_extract_output_lengths):
-    processor = AutoProcessor.from_pretrained(model)
+    processor = Wav2Vec2FeatureExtractor.from_pretrained(model)
     def _collate(batch):
         audios = [b[0] for b in batch]
-        audios = processor(audio=audios, sampling_rate=16000, padding=True)
+        audios = processor(raw_speech=audios, sampling_rate=16000, padding=True)
         audios = torch.FloatTensor(audios["input_values"])
 
         _, max_length = audios.shape

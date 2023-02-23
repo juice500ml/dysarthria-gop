@@ -1,14 +1,11 @@
-import librosa
-
 import torch
-from transformers import AutoProcessor, AutoModelForPreTraining
+from transformers import AutoModelForPreTraining
 
 
 class BaseRecognizer(torch.nn.Module):
     def __init__(self, model, feature_size, vocab_size):
         super().__init__()
         self.head = torch.nn.Linear(feature_size, vocab_size)
-        self.processor = AutoProcessor.from_pretrained(model)
 
     def _get_features(self, input_values, attention_mask):
         raise NotImplementedError
