@@ -29,7 +29,7 @@ def ctc_like_loss(logits, labels):
         _, indices, counts = torch.unique_consecutive(
             label, return_inverse=True, return_counts=True)
         weight = torch.index_select(1 / counts, 0, indices) / counts.shape[0]
-        weight = torch.cat((weight, torch.zeros(labels.shape[1] - length)))
+        weight = torch.cat((weight, torch.zeros(labels.shape[1] - length, device=weight.device)))
         weights.append(weight)
     weights = torch.stack(weights) / len(labels)
     return (losses * weights).sum()

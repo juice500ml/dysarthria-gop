@@ -98,7 +98,7 @@ def _prepare_data(df, batch_size, collator):
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
-        num_workers=8,
+        num_workers=32,
         collate_fn=collator,
     )
     valid_ds = torch.utils.data.DataLoader(
@@ -106,7 +106,7 @@ def _prepare_data(df, batch_size, collator):
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
-        num_workers=8,
+        num_workers=32,
         collate_fn=collator,
     )
     test_ds = torch.utils.data.DataLoader(
@@ -114,7 +114,7 @@ def _prepare_data(df, batch_size, collator):
         batch_size=batch_size,
         shuffle=False,
         pin_memory=True,
-        num_workers=8,
+        num_workers=32,
         collate_fn=collator,
     )
     return train_ds, valid_ds, test_ds
@@ -140,8 +140,8 @@ def _train(model, device, optim, loss_fn, dataloader, logger):
         logger("train/loss", loss.item())
         loss_acc += loss.item()
 
-        correct_acc += ((logits.argmax(-1) == y) * (y >= 0)).sum()
-        wrong_acc += ((logits.argmax(-1) != y) * (y >= 0)).sum()
+        correct_acc += ((logits.detach().argmax(-1) == y) * (y >= 0)).sum()
+        wrong_acc += ((logits.detach().argmax(-1) != y) * (y >= 0)).sum()
 
     logger("train/avg_loss", loss_acc / len(dataloader))
     logger("train/accuracy", correct_acc / (correct_acc + wrong_acc))
@@ -153,11 +153,9 @@ def _eval(model, device, dataloader, logger, metric_funcs, mode):
     preds_acc = []
     labels_acc = []
     for x, y in tqdm(dataloader):
-        preds = model(x.to(device))
-        preds_acc.append(preds.detach().cpu().numpy())
+        logits = model(x.to(device))
+        preds_acc.append(logits.detach().softmax(-1).cpu().numpy())
         labels_acc.append(y.numpy())
-    preds_acc = np.concatenate(preds_acc)
-    labels_acc = np.concatenate(labels_acc)
 
     eval_results = {}
     for name, func in metric_funcs.items():
@@ -169,8 +167,8 @@ def _eval(model, device, dataloader, logger, metric_funcs, mode):
 
 def _discretize_metric(metric):
     def _metric(y_true, y_pred):
-        y_true = y_true.flatten()
-        y_pred = y_pred.argmax(-1).flatten()
+        y_true = np.concatenate([l.flatten() for l in y_true])
+        y_pred = np.concatenate([p.argmax(-1).flatten() for p in y_pred])
         mask = y_true >= 0
         return metric(y_true[mask], y_pred[mask])
     return _metric
@@ -223,6 +221,8 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(exp_dir / "best.pt"))
     _test_results = _eval(model, device, test_dataloader, logger, _metrics, "test")
     pickle.dump(_test_results, open(exp_dir / "test_results.pkl", "wb"))
+    pickle.dump(index_to_vocab, open(exp_dir / "index_to_vocab.pkl", "wb"))
+    pickle.dump(args, open(exp_dir / "arguments.pkl", "wb"))
 
     print("Training Finished!")
     print(_test_results)

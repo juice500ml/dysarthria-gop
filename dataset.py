@@ -64,15 +64,15 @@ class PhoneRecognitionDataset(torch.utils.data.Dataset):
         sample_rate: int = 16000
     ):
         self.df = df
-        self.audio_df = df
+        self.audios = df.audio.unique()
         self.sample_rate = sample_rate
 
     def __len__(self):
-        return len(self.audio_df)
+        return len(self.audios)
 
     def __getitem__(self, i):
-        x, _ = librosa.load(self.audio_df.iloc[i].audio, sr=self.sample_rate, mono=True)
-        y = self.df[self.df["audio"] == self.audio_df.iloc[i].audio]
+        x, _ = librosa.load(self.audios[i], sr=self.sample_rate, mono=True)
+        y = self.df[self.df["audio"] == self.audios[i]]
 
         return x, y[["phone", "min", "max"]]
 
