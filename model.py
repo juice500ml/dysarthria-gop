@@ -16,7 +16,7 @@ class BaseRecognizer(torch.nn.Module):
     def forward(self, inputs):
         features = self._get_features(inputs)
         logits = self.head(features)
-        return logits
+        return logits, features
 
 
 class Wav2Vec2Recognizer(BaseRecognizer):

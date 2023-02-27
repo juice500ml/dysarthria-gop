@@ -26,6 +26,12 @@ def get_vocab(df):
     return index_to_vocab, vocab_to_index
 
 
+def reduce_vocab(df):
+    reducer = {'(...)': '(...)', 'a': 'a', 'aɪ': 'aɪ', 'aʊ': 'aʊ', 'aː': 'a', 'ã': 'a', 'ɐ': 'a', 'ɑ': 'a', 'ɑː': 'a', 'ɒ': 'a', 'ɔ': 'ɔ', 'ɔː': 'ɔ', 'ʀ': 'ʀ', 'ʊ': 'ʊ', 'ʊə': 'ʊə', 'θ': 'θ', 'ʃ': 'ʃ', 'ʃʲ': 'ʃ', 'ʃː': 'ʃ', 'ɨ': 'ɨ', 'ɔɪ': 'ɔɪ', 'ɔʏ': 'ɔɪ', 'ə': 'ʌ', 'ɜː': 'ʌ', 'ʌ': 'ʌ', 'əʊ': 'əʊ', 'ɪə': 'ɪə', 'ɥ': 'ɥ', 'ɛ': 'ɛ', 'ɛː': 'ɛ', 'b': 'b', 'bʲ': 'b', 'bː': 'b', 'd': 'd', 'dʲ': 'd', 'dː': 'd', 'ɡ': 'ɡ', 'ɡʲ': 'g', 'ɡː': 'g', 'dz': 'dz', 'dːz': 'dz', 'ɣ': 'ɣ', 'dʒ': 'dʒ', 'dːʒ': 'dʒ', 'ʒ': 'dʒ', 'e': 'e', 'eː': 'e', 'ẽ': 'e', 'ei': 'ei', 'eə': 'eə', 'eɪ': 'eɪ', 'f': 'f', 'fʲ': 'f', 'fː': 'f', 'h': 'h', 'i': 'i', 'iː': 'i', 'ɪ': 'i', 'y': 'i', 'yː': 'i', 'ʏ': 'i', 'j': 'j', 'k': 'k', 'kʲ': 'k', 'kː': 'k', 'l': 'l', 'lʲ': 'l', 'lː': 'l', 'm': 'm', 'mʲ': 'm', 'mː': 'm', 'ɱ': 'm', 'n': 'n', 'nʲ': 'n', 'nː': 'n', 'ɲ': 'n', 'ɲː': 'n', 'o': 'o', 'oː': 'o', 'õ': 'õ', 'p': 'p', 'pʲ': 'p', 'pː': 'p', 'r': 'r', 'rʲ': 'r', 'rː': 'r', 's': 's', 'sʲ': 's', 'sː': 's', 'ç': 's', 't': 't', 'tʲ': 't', 'tː': 't', 'ts': 'ts', 'tːs': 'ts', 'tʃ': 'tʃ', 'tʃʲ': 'tʃ', 'tːʃ': 'tʃ', 'u': 'u', 'uː': 'u', 'v': 'v', 'vʲ': 'v', 'vː': 'v', 'β': 'v', 'w': 'w', 'x': 'x', 'xʲ': 'x', 'z': 'z', 'zʲ': 'z', 'æ': 'æ', 'ð': 'ð', 'ŋ': 'ŋ', 'œ': 'œ', 'ø': 'œ', 'øː': 'œ', 'ɶ̃': 'œ', 'ʎ': 'ʎ', 'ʎː': 'ʎː', 'ʔ': 'ʔ', 'ʝ': 'ʝ'}
+    df["phone"] = df["phone"].apply(lambda p: reducer[p])
+    return df
+
+
 def _prepare_commonphone(commonphone_path: Path):
     langs = ("de", "en", "es", "fr", "it", "ru")
     splits = ("train", "dev", "test")
@@ -63,23 +69,26 @@ def _prepare_ssnce(ssnce_path: Path):
         for audio_path in (ssnce_path / label).glob("*.wav"):
             grid_path = audio_path.with_suffix(".TextGrid")
             grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=False)
+            audio_len = librosa.get_duration(filename=audio_path, sr=16000)
             for entry in grid.getTier("phonemes").entries:
-                rows.append({
-                    "audio": audio_path,
-                    "label": index,
-                    "label_name": label,
-                    "min": entry.start,
-                    "max": entry.end,
-                    "phone": vocab[entry.label],
-                })
-            # cleanup
-            rows[-1]["max"] = librosa.get_duration(filename=audio_path, sr=16000)
+                if entry.end <= audio_len:
+                    rows.append({
+                        "audio": audio_path,
+                        "label": index,
+                        "label_name": label,
+                        "min": entry.start,
+                        "max": entry.end,
+                        "phone": vocab[entry.label],
+                    })
+                else:
+                    break
+            rows[-1]["max"] = audio_len
     return pd.DataFrame(rows)
 
 
 def _prepare_torgo(torgo_path: Path):
     labels = ("0_healthy", "1_mild", "2_moderate", "3_severe")
-    vocab = {'#': '(...)', '@': '(...)', 'OY1': 'ɔɪ', 'T': 't', 'UH1': 'ʊ', 'ZH': 'ʒ', 'A01': 'ɒ', 'SH': 'ʃ', 'G': 'ɡ', 'B': 'b', 'k': 'k', 'AA2': 'ɑ', 'EY1': 'ei', 'AA': 'ɑ', 'EI': 'ei', 'AW1': 'aʊ', 'ER0': 'eə', 'Y': 'y', 'IH2': 'ɪ', 'AE2': 'æ', 'CH': 'tʃ', 'A02': 'ɒ', 'AE': 'æ', 'UW2': 'u', 'DH': 'ð', 'EH0': 'ɛ', 'P': 'p', 'F': 'f', 'AH0': 'ə', 'E': '(...)', 'd': 'd', 'EY2': 'ei', 'OW0': 'əʊ', 'IY0': 'i', 'NG': 'ŋ', 'AE0': 'æ', 'JH': 'dʒ', 'AY1': 'aɪ', 'AO1': 'ɒ', 'OW2': 'əʊ', 'EY': 'æ', 'sp': '(...)', 'sil': '(...)', 'IY1': 'i', 'AH2': 'ɐ', 'ER1': 'eə', 'OW1': 'əʊ', 'K': 'k', 'L': 'l', 'EH1': 'ɛ', 'OU': 'əʊ', 'AA1': 'ɑ', 'AY': 'aɪ', 'AW2': 'aʊ', 'R': 'r', 'HH': 'h', 'H': 'h', 'IH1': 'ɪ', 'UW1': 'u', 'S': 's', '3': '(...)', 'EY0': 'ei', 'IH0': 'ɪ', 'Z': 'z', 'W': 'w', 'AH1': 'ɐ', 'AY2': 'aɪ', 'N': 'n', 'AO2': 'ɒ', 'UW': 'u', 'EH2': 'ɛ', 'V': 'v', 'U': 'u', 'IY2': 'i', 'A0': 'ɒ', 'AE1': 'æ', 'UW0': 'u', 'TH': 'θ', 'M': 'm', 'A': 'ɑ', 'D': 'd', 'UH': 'ɐ', 'IH': 'ɪ', 'ER': 'eə', 'AH': '(...)', 'OW': 'aʊ', 'IY': 'i', 'EH': 'ɛ', 'AI': 'aɪ', 'AW': 'aʊ'}
+    vocab = {'': '(...)', '#': '(...)', '@': '(...)', 'OY1': 'ɔɪ', 'T': 't', 'UH1': 'ʊ', 'ZH': 'ʒ', 'A01': 'ɒ', 'SH': 'ʃ', 'G': 'ɡ', 'B': 'b', 'k': 'k', 'AA2': 'ɑ', 'EY1': 'ei', 'AA': 'ɑ', 'EI': 'ei', 'AW1': 'aʊ', 'ER0': 'eə', 'Y': 'y', 'IH2': 'ɪ', 'AE2': 'æ', 'CH': 'tʃ', 'A02': 'ɒ', 'AE': 'æ', 'UW2': 'u', 'DH': 'ð', 'EH0': 'ɛ', 'P': 'p', 'F': 'f', 'AH0': 'ə', 'E': '(...)', 'd': 'd', 'EY2': 'ei', 'OW0': 'əʊ', 'IY0': 'i', 'NG': 'ŋ', 'AE0': 'æ', 'JH': 'dʒ', 'AY1': 'aɪ', 'AO1': 'ɒ', 'OW2': 'əʊ', 'EY': 'æ', 'sp': '(...)', 'sil': '(...)', 'IY1': 'i', 'AH2': 'ɐ', 'ER1': 'eə', 'OW1': 'əʊ', 'K': 'k', 'L': 'l', 'EH1': 'ɛ', 'OU': 'əʊ', 'AA1': 'ɑ', 'AY': 'aɪ', 'AW2': 'aʊ', 'R': 'r', 'HH': 'h', 'H': 'h', 'IH1': 'ɪ', 'UW1': 'u', 'S': 's', '3': '(...)', 'EY0': 'ei', 'IH0': 'ɪ', 'Z': 'z', 'W': 'w', 'AH1': 'ɐ', 'AY2': 'aɪ', 'N': 'n', 'AO2': 'ɒ', 'UW': 'u', 'EH2': 'ɛ', 'V': 'v', 'U': 'u', 'IY2': 'i', 'A0': 'ɒ', 'AE1': 'æ', 'UW0': 'u', 'TH': 'θ', 'M': 'm', 'A': 'ɑ', 'D': 'd', 'UH': 'ɐ', 'IH': 'ɪ', 'ER': 'eə', 'AH': '(...)', 'OW': 'aʊ', 'IY': 'i', 'EH': 'ɛ', 'AI': 'aɪ', 'AW': 'aʊ'}
     rows = []
     for label in labels:
         index, label_name = label.split("_")
@@ -97,12 +106,23 @@ def _prepare_torgo(torgo_path: Path):
                     "max": entry.end,
                     "phone": vocab[entry.label],
                 })
+
+            audio_length = librosa.get_duration(filename=audio_path, sr=16000)
+            if entry.end < audio_length:
+                rows.append({
+                    "audio": audio_path,
+                    "label": index,
+                    "label_name": label_name,
+                    "min": entry.end,
+                    "max": audio_length,
+                    "phone": "(...)",
+                })
     return pd.DataFrame(rows)
 
 
 def _prepare_qolt(qolt_path: Path):
     labels = ("0_healthy", "1_mild", "2_mildmod", "3_modsev", "4_sev")
-    vocab = {'d': 'd', 'dʑ': 'ts', 'e': 'e', 'h': 'h', 'i': 'i', 'j': 'j', 'k': 'k', 'k̚': 'k', 'k͈': 'k', 'm': 'm', 'n': 'n', 'o': 'o', 'oː': 'o', 'p': 'p', 'pʰ': 'p', 'p̚': 'p', 'p͈': 'p', 'spn': '(...)', 'sʰ': 's', 's͈': 's', 't': 't', 'tɕ': 'ts', 'tɕʰ': 'ts', 'tʰ': 't', 't̚': 't', 'u': 'u', 'w': 'w', 'ŋ': 'ŋ', 'ɐ': 'ɐ', 'ɕʰ': 's', 'ɛː': 'ɛ', 'ɡ': 'ɡ', 'ɨ': 'ɨ', 'ɭ': 'l', 'ɸ': 'h', 'ɾ': 'r', 'ʌ': 'ʌ'}
+    vocab = {'#': '(...)', '': '(...)', 'd': 'd', 'dʑ': 'ts', 'e': 'e', 'h': 'h', 'i': 'i', 'j': 'j', 'k': 'k', 'k̚': 'k', 'k͈': 'k', 'm': 'm', 'n': 'n', 'o': 'o', 'oː': 'o', 'p': 'p', 'pʰ': 'p', 'p̚': 'p', 'p͈': 'p', 'spn': '(...)', 'sʰ': 's', 's͈': 's', 't': 't', 'tɕ': 'ts', 'tɕʰ': 'ts', 'tʰ': 't', 't̚': 't', 'u': 'u', 'w': 'w', 'ŋ': 'ŋ', 'ɐ': 'ɐ', 'ɕʰ': 's', 'ɛː': 'ɛ', 'ɡ': 'ɡ', 'ɨ': 'ɨ', 'ɭ': 'l', 'ɸ': 'h', 'ɾ': 'r', 'ʌ': 'ʌ'}
     rows = []
     for label in labels:
         index, label_name = label.split("_")
@@ -110,10 +130,8 @@ def _prepare_qolt(qolt_path: Path):
 
         for audio_path in (qolt_path / label).glob("*.wav"):
             grid_path = audio_path.with_suffix(".TextGrid")
-            if not grid_path.exists():
-                continue
-
-            grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=False)
+            audio_len = librosa.get_duration(filename=audio_path, sr=16000)
+            grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=True)
             for entry in grid.getTier("phones").entries:
                 rows.append({
                     "audio": audio_path,
@@ -123,20 +141,29 @@ def _prepare_qolt(qolt_path: Path):
                     "max": entry.end,
                     "phone": vocab[entry.label],
                 })
+            if entry.end < audio_len:
+                rows.append({
+                    "audio": audio_path,
+                    "label": index,
+                    "label_name": label_name,
+                    "min": entry.end,
+                    "max": audio_len,
+                    "phone": "(...)",
+                })
+
     return pd.DataFrame(rows)
 
 
 def _prepare_l2arctic(l2arctic_path: Path):
-    # vocab = {'#': '(...)', '@': '(...)', 'OY1': 'ɔɪ', 'T': 't', 'UH1': 'ʊ', 'ZH': 'ʒ', 'A01': 'ɒ', 'SH': 'ʃ', 'G': 'ɡ', 'B': 'b', 'k': 'k', 'AA2': 'ɑ', 'EY1': 'ei', 'AA': 'ɑ', 'EI': 'ei', 'AW1': 'aʊ', 'ER0': 'eə', 'Y': 'y', 'IH2': 'ɪ', 'AE2': 'æ', 'CH': 'tʃ', 'A02': 'ɒ', 'AE': 'æ', 'UW2': 'u', 'DH': 'ð', 'EH0': 'ɛ', 'P': 'p', 'F': 'f', 'AH0': 'ə', 'E': '(...)', 'd': 'd', 'EY2': 'ei', 'OW0': 'əʊ', 'IY0': 'i', 'NG': 'ŋ', 'AE0': 'æ', 'JH': 'dʒ', 'AY1': 'aɪ', 'AO1': 'ɒ', 'OW2': 'əʊ', 'EY': 'æ', 'sp': '(...)', 'sil': '(...)', 'IY1': 'i', 'AH2': 'ɐ', 'ER1': 'eə', 'OW1': 'əʊ', 'K': 'k', 'L': 'l', 'EH1': 'ɛ', 'OU': 'əʊ', 'AA1': 'ɑ', 'AY': 'aɪ', 'AW2': 'aʊ', 'R': 'r', 'HH': 'h', 'H': 'h', 'IH1': 'ɪ', 'UW1': 'u', 'S': 's', '3': '(...)', 'EY0': 'ei', 'IH0': 'ɪ', 'Z': 'z', 'W': 'w', 'AH1': 'ɐ', 'AY2': 'aɪ', 'N': 'n', 'AO2': 'ɒ', 'UW': 'u', 'EH2': 'ɛ', 'V': 'v', 'U': 'u', 'IY2': 'i', 'A0': 'ɒ', 'AE1': 'æ', 'UW0': 'u', 'TH': 'θ', 'M': 'm', 'A': 'ɑ', 'D': 'd', 'UH': 'ɐ', 'IH': 'ɪ', 'ER': 'eə', 'AH': '(...)', 'OW': 'aʊ', 'IY': 'i', 'EH': 'ɛ', 'AI': 'aɪ', 'AW': 'aʊ'}
     rows = []
     def _remove_digits(p):
         return "".join([c for c in p if c not in "0123456789"])
 
-    vocab = {'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ', 'B': 'b', 'CH': 'b', 'D': 'd', 'DH': 'ð', 'EH': 'ɛ', 'ER': 'ɜː', 'EY': 'eɪ', 'F': 'f', 'G': 'ɡ', 'HH': 'h', 'IH': 'ɪ', 'IY': 'i', 'JH': 'dʒ', 'K': 'k', 'L': 'lʲ', 'M': 'm', 'N': 'n', 'NG': 'ŋ', 'OW': 'əʊ', 'OY': 'ɔɪ', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'ʃ', 'T': 't', 'TH': 'θ', 'UH': 'ʊ', 'UW': 'u', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ', 'sil': '(...)', 'sp': '(...)', 'spn': '(...)'}
+    vocab = {'': '(...)', 'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ', 'B': 'b', 'CH': 'tʃ', 'D': 'd', 'DH': 'ð', 'EH': 'ɛ', 'ER': 'ɜː', 'EY': 'eɪ', 'F': 'f', 'G': 'ɡ', 'HH': 'h', 'IH': 'ɪ', 'IY': 'i', 'JH': 'dʒ', 'K': 'k', 'L': 'lʲ', 'M': 'm', 'N': 'n', 'NG': 'ŋ', 'OW': 'əʊ', 'OY': 'ɔɪ', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'ʃ', 'T': 't', 'TH': 'θ', 'UH': 'ʊ', 'UW': 'u', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ', 'sil': '(...)', 'sp': '(...)', 'spn': '(...)'}
 
     for audio_path in l2arctic_path.glob("*/wav/*.wav"):
         grid_path = str(audio_path).replace("/wav/", "/textgrid/").replace(".wav", ".TextGrid")
-        grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=False)
+        grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=True)
         speaker = audio_path.parent.parent.name
         if speaker in ("NJS", "TLV", "TNI", "ZHAA"):
             split = "test"
@@ -189,4 +216,5 @@ if __name__ == "__main__":
     args = _get_args()
     _prepare = {"commonphone": _prepare_commonphone, "ssnce": _prepare_ssnce, "torgo": _prepare_torgo, "qolt": _prepare_qolt, "l2arctic": _prepare_l2arctic}[args.dataset_type]
     df = _prepare(args.dataset_path)
-    df.to_csv(args.output_path / f"{args.dataset_type}.csv.gz", index=False, compression="gzip")
+    csv_path = args.output_path / f"{args.dataset_type}.csv.gz"
+    df.to_csv(csv_path, index=False, compression="gzip")

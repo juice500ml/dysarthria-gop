@@ -14,7 +14,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from transformers import Wav2Vec2FeatureExtractor
 
-from dataset import PhoneRecognitionDataset, get_vocab
+from dataset import PhoneRecognitionDataset, get_vocab, reduce_vocab
 from model import Wav2Vec2Recognizer, Wav2Vec2ConvRecognizer
 from loss import get_loss
 
@@ -36,11 +36,11 @@ def _get_args():
 
     # Optimizer Settings
     parser.add_argument("--optim", default="AdamW", type=str)
-    parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--learning_rate", type=float, default=5e-5)
 
     # Dataset settings
     parser.add_argument("--commonphone_csv", required=True, type=Path)
+    parser.add_argument("--reduce_vocab", default=False, type=bool)
 
     return parser.parse_args()
 
@@ -132,7 +132,7 @@ def _train(model, device, optim, loss_fn, dataloader, logger):
         y = y.to(device)
 
         optim.zero_grad()
-        logits = model(x)
+        logits, _ = model(x)
         loss = loss_fn(logits, y)
         loss.backward()
         optim.step()
@@ -153,7 +153,7 @@ def _eval(model, device, dataloader, logger, metric_funcs, mode):
     preds_acc = []
     labels_acc = []
     for x, y in tqdm(dataloader):
-        logits = model(x.to(device))
+        logits, _ = model(x.to(device))
         preds_acc.append(logits.detach().softmax(-1).cpu().numpy())
         labels_acc.append(y.numpy())
 
@@ -191,6 +191,8 @@ if __name__ == "__main__":
     device = torch.device("cpu" if args.gpu is None else args.gpu)
 
     df = pd.read_csv(args.commonphone_csv, compression="gzip")
+    if args.reduce_vocab:
+        df = reduce_vocab(df)
     index_to_vocab, vocab_to_index = get_vocab(df)
 
     model = _prepare_model(args.model, len(index_to_vocab), args.use_conv_only).to(device)
@@ -198,9 +200,10 @@ if __name__ == "__main__":
     collator = _get_collator(args.model, vocab_to_index, model.get_feat_length)
     train_dataloader, valid_dataloader, test_dataloader = _prepare_data(df, args.batch_size, collator)
 
-    optim = getattr(torch.optim, args.optim)(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    optim = getattr(torch.optim, args.optim)(model.parameters(), lr=args.learning_rate)
     loss_fn = get_loss(args.loss)
 
+    torch.save(model.state_dict(), exp_dir / "best.pt")
     best_epoch, best_metric = None, None
     for epoch in range(args.num_epochs):
         _train(model, device, optim, loss_fn, train_dataloader, logger)
