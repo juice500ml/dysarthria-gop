@@ -19,6 +19,7 @@ def _get_args():
     parser.add_argument("--commonphone_csv", type=Path)
     parser.add_argument("--gpu", default=None, type=int, help="Default to CPU. Input GPU index (integer) to use GPU.")
     parser.add_argument("--model_path", type=Path)
+    parser.add_argument("--ignore_nonexisting_vocab", type=bool, default=True)
     return parser.parse_args()
 
 
@@ -64,6 +65,19 @@ def _infer(model, test_ds, device):
         logits_acc.append(logits.detach().cpu()[0])
         labels_acc.append(y[0])
     return logits_acc, labels_acc
+
+
+def _remove_nonexisting_vocab(logits_acc, labels_acc, prior, index_to_vocab, vocab_to_index, existing_vocabs):
+    indices = np.array([vocab_to_index[v] for v in existing_vocabs])
+    mask_acc = [np.isin(labels, indices) for labels in labels_acc]
+    new_vocab_to_index = {v: i for i, v in enumerate(existing_vocabs)}
+
+    prior = np.array([prior[i] for i in range(len(prior)) if i in indices])
+    prior /= prior.sum()
+    logits_acc = [logits[mask][:, indices] for mask, logits in zip(mask_acc, logits_acc)]
+    labels_acc = [labels[mask].apply_(lambda i: new_vocab_to_index[index_to_vocab[i]]) for mask, labels in zip(mask_acc, labels_acc)]
+
+    return logits_acc, labels_acc, prior
 
 
 def _get_scores(logits_acc, labels_acc, gop_scorer, ignore_label):
@@ -165,6 +179,10 @@ if __name__ == "__main__":
     prior = _get_prior(cp_df, vocab_to_index)
     # temperature = _get_temperature(args.commonphone_csv)
 
+    logits_acc, labels_acc = _infer(model.to(device), test_dl, device)
+    if args.ignore_nonexisting_vocab:
+        logits_acc, labels_acc, prior = _remove_nonexisting_vocab(logits_acc, labels_acc, prior, index_to_vocab, vocab_to_index, df.phone.unique().tolist())
+
     scorers = {
         "GMM-GoP": gmm_gop_scorer,
         "NN-GoP": nn_gop_scorer,
@@ -184,7 +202,6 @@ if __name__ == "__main__":
     }
     ood_scorers = {}
 
-    logits_acc, labels_acc = _infer(model.to(device), test_dl, device)
     for name, scorer in scorers.items():
         scores = _get_scores(logits_acc, labels_acc, scorer, ignore_label=vocab_to_index["(...)"])
         print(f"{name}: {kendalltau(scores, severity).statistic:.4f}")
