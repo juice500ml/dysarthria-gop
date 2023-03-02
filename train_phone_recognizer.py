@@ -68,23 +68,22 @@ def _get_collator(model, vocab_to_index, _get_feat_extract_output_lengths):
         audios = processor(raw_speech=audios, sampling_rate=16000, padding=True)
         audios = torch.FloatTensor(audios["input_values"])
 
-        _, max_length = audios.shape
-        max_length = _get_feat_extract_output_lengths(max_length).item()
+        batch_size, max_length = audios.shape
+        max_feature_length = _get_feat_extract_output_lengths(max_length).item()
 
-        labels = []
-        for _, _df in batch:
-            label = []
-            prev_loc = 0
+        labels = np.ones((batch_size, max_feature_length), dtype=np.int32) * -100
+        for i, (_, _df) in enumerate(batch):
+            feature_length = (audios[i] != -100).sum().item()
+            labels[i, 0:feature_length] = vocab_to_index["(...)"]
 
             for _, row in _df.iterrows():
                 index = vocab_to_index[row["phone"]]
-                loc = _get_feat_extract_output_lengths(int(row["max"] * 16000)).item()
-                if loc > prev_loc:
-                    label += [index] * (loc - prev_loc)
-                    prev_loc = loc
+                start_loc = _get_feat_extract_output_lengths(int(row["min"] * 16000)).item()
+                end_loc = min(_get_feat_extract_output_lengths(int(row["max"] * 16000)).item(), feature_length)
 
-            label += [-100] * (max_length - len(label))
-            labels.append(label)
+                if start_loc < end_loc:
+                    labels[i, start_loc:end_loc] = index
+
         labels = torch.LongTensor(labels)
 
         return audios, labels
