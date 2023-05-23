@@ -19,7 +19,7 @@ def _get_args():
     parser.add_argument("--commonphone_csv", type=Path)
     parser.add_argument("--gpu", default=None, type=int, help="Default to CPU. Input GPU index (integer) to use GPU.")
     parser.add_argument("--model_path", type=Path)
-    parser.add_argument("--ignore_nonexisting_vocab", type=bool, default=True)
+    parser.add_argument("--ignore_nonexisting_vocab", type=bool, default=False)
     return parser.parse_args()
 
 
@@ -35,10 +35,13 @@ def _get_data(df, collator):
     ds = PhoneRecognitionDataset(df)
 
     severity = []
-    for audio in ds.audios:
-        label = df[df.audio == audio].label.unique()
-        assert len(label) == 1
-        severity.append(label[0])
+    for audio in tqdm(ds.audios):
+        # label = df.label[df.audio == audio].unique()
+        # assert len(label) == 1
+        # severity.append(label[0])
+        label = df.label[df.audio == audio].iloc[0]
+        # assert len(label) == 1
+        severity.append(label)
 
     return severity, torch.utils.data.DataLoader(
         ds,
@@ -83,78 +86,78 @@ def _remove_nonexisting_vocab(logits_acc, labels_acc, prior, index_to_vocab, voc
 def _get_scores(logits_acc, labels_acc, gop_scorer, ignore_label):
     scores = []
     for logits, labels in zip(logits_acc, labels_acc):
-        mask = labels != ignore_label
-        scores.append(gop_scorer(logits[mask], labels[mask]))
-    return np.array(scores)
+        scores.append(gop_scorer(logits, labels, ignore_label))
+    return scores
 
 
-def _phonewise_loop(labels: torch.LongTensor):
+def _phonewise_loop(labels: torch.LongTensor, ignore_label: int):
     uniq, loc = torch.unique_consecutive(
         labels, return_inverse=True)
     for i, v in enumerate(uniq):
-        mask = (loc == i).numpy()
-        yield v.item(), mask
+        if i != ignore_label:
+            mask = (loc == i).numpy()
+            yield v.item(), mask
 
 
-def gmm_gop_scorer(logits: torch.FloatTensor, labels: torch.LongTensor) -> float:
+def gmm_gop_scorer(logits: torch.FloatTensor, labels: torch.LongTensor, ignore_label: int) -> float:
     scores = []
     preds = logits.softmax(-1)
-    for vocab, mask in _phonewise_loop(labels):
+    for vocab, mask in _phonewise_loop(labels, ignore_label):
         scores.append(preds[mask, vocab].log().mean().item())
-    return np.mean(scores)
+    return np.array(scores)
 
 
-def nn_gop_scorer(logits, labels):
+def nn_gop_scorer(logits, labels, ignore_label):
     scores = []
     preds = logits.softmax(-1)
-    for vocab, mask in _phonewise_loop(labels):
+    for vocab, mask in _phonewise_loop(labels, ignore_label):
         avg_preds = preds[mask].mean(0)
         scores.append(avg_preds[vocab].item() - avg_preds.max().item())
-    return np.mean(scores)
+    return np.array(scores)
 
 
-def logit_margin_gop_scorer(logits, labels):
+def logit_margin_gop_scorer(logits, labels, ignore_label):
     scores = []
-    for vocab, mask in _phonewise_loop(labels):
+    for vocab, mask in _phonewise_loop(labels, ignore_label):
         avg_preds = logits[mask].mean(0)
         mask = torch.arange(avg_preds.shape[0]) != vocab
         others_avg_preds = avg_preds[mask]
         scores.append(avg_preds[vocab].item() - others_avg_preds.max().item())
-    return np.mean(scores)
+    return np.array(scores)
 
 
-def margin_gop_scorer(logits, labels):
-    return logit_margin_gop_scorer(logits.softmax(-1), labels)
+def margin_gop_scorer(logits, labels, ignore_label):
+    return logit_margin_gop_scorer(logits.softmax(-1), labels, ignore_label)
 
 
-def logit_gop_scorer(logits, labels):
+def logit_gop_scorer(logits, labels, ignore_label):
     scores = []
-    for vocab, mask in _phonewise_loop(labels):
+    for vocab, mask in _phonewise_loop(labels, ignore_label):
         scores.append(logits[mask, vocab].mean().item())
-    return np.mean(scores)
+    return np.array(scores)
 
 
-def mean_prob_gop_scorer(logits, labels):
-    return logit_gop_scorer(logits.softmax(-1), labels)
+def mean_prob_gop_scorer(logits, labels, ignore_label):
+    return logit_gop_scorer(logits.softmax(-1), labels, ignore_label)
 
 
-def entropy_gop_scorer(logits, labels):
+def entropy_gop_scorer(logits, labels, ignore_label):
     scores = []
     preds = logits.softmax(-1)
-    for vocab, mask in _phonewise_loop(labels):
+    for vocab, mask in _phonewise_loop(labels, ignore_label):
         scores.append(preds[mask, vocab].mean().item())
     return entropy(scores)
 
 
 def normalizer(scorer, prior):
-    def _norm_scorer(logits, labels):
-        return scorer(logits - np.exp(prior), labels)
+    def _norm_scorer(logits, labels, ignore_label):
+        return scorer(logits - np.exp(prior), labels, ignore_label)
     return _norm_scorer
 
 
 def scaler(scorer, temperature):
-    def _scale_scorer(logits, labels):
-        return scorer(logits / temperature, labels)
+    def _scale_scorer(logits, labels, ignore_label):
+        return scorer(logits / temperature, labels, ignore_label)
     return _scale_scorer
 
 
@@ -177,7 +180,7 @@ if __name__ == "__main__":
     if do_reduce_vocab:
         cp_df = reduce_vocab(cp_df)
     prior = _get_prior(cp_df, vocab_to_index)
-    # temperature = _get_temperature(args.commonphone_csv)
+    temperature = 7.8375
 
     logits_acc, labels_acc = _infer(model.to(device), test_dl, device)
     if args.ignore_nonexisting_vocab:
@@ -186,22 +189,27 @@ if __name__ == "__main__":
     scorers = {
         "GMM-GoP": gmm_gop_scorer,
         "NN-GoP": nn_gop_scorer,
-        "CALL-GoP": normalizer(margin_gop_scorer, prior),
         "DNN-GoP": normalizer(mean_prob_gop_scorer, prior),
+
         "Entropy-GoP": entropy_gop_scorer,
-        "NormEntropy-GoP": normalizer(entropy_gop_scorer, prior),
-        # "ScaleEntropy-GoP": scaler(entropy_gop_scorer, temperature),
         "Margin-GoP": margin_gop_scorer,
+        "MaxLogit-GoP": logit_gop_scorer,
         "LogitMargin-GoP": logit_margin_gop_scorer,
-        "Logit-GoP": logit_gop_scorer,
+
+        "NormEntropy-GoP": normalizer(entropy_gop_scorer, prior),
+        "NormMargin-GoP": normalizer(margin_gop_scorer, prior),
         "NormLogit-GoP": normalizer(logit_gop_scorer, prior),
         "NormLogitMargin-GoP": normalizer(logit_margin_gop_scorer, prior),
-        "Prob-GoP": mean_prob_gop_scorer,
-        "NormProb-GoP": normalizer(mean_prob_gop_scorer, prior),
-        # "ScaleProb-GoP": scaler(mean_prob_gop_scorer, temperature),
-    }
-    ood_scorers = {}
 
+        "ScaleEntropy-GoP": scaler(entropy_gop_scorer, temperature),
+        "ScaleMargin-GoP": scaler(margin_gop_scorer, temperature),
+        "ScaleLogit-GoP": scaler(logit_gop_scorer, temperature),
+        "ScaleLogitMargin-GoP": scaler(logit_margin_gop_scorer, temperature),
+    }
+
+    scores_acc = {"severity": severity, "logits": logits_acc, "labels": labels_acc, "index_to_vocab": index_to_vocab, "df": df}
     for name, scorer in scorers.items():
         scores = _get_scores(logits_acc, labels_acc, scorer, ignore_label=vocab_to_index["(...)"])
-        print(f"{name}: {kendalltau(scores, severity).statistic:.4f}")
+        scores_acc[name] = scores
+        print(f"{name}: {kendalltau([s.mean() for s in scores], severity).statistic:.4f}")
+    pickle.dump(scores_acc, open(f"{args.dataset_csv.stem}_outputs.pkl", "wb"))

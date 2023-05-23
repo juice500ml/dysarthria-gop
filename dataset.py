@@ -14,7 +14,7 @@ import torch
 def _get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=Path, help="Path to dataset.")
-    parser.add_argument("--dataset_type", type=str, choices=["commonphone", "ssnce", "torgo", "qolt", "l2arctic"])
+    parser.add_argument("--dataset_type", type=str, choices=["commonphone", "ssnce", "torgo", "qolt", "l2arctic", "uaspeech"])
     parser.add_argument("--output_path", type=Path, help="Output csv folder")
     return parser.parse_args()
 
@@ -91,6 +91,7 @@ def _prepare_ssnce(ssnce_path: Path):
 def _prepare_torgo(torgo_path: Path):
     labels = ("0_healthy", "1_mild", "2_moderate", "3_severe")
     vocab = {'': '(...)', '#': '(...)', '@': '(...)', 'OY1': 'ɔɪ', 'T': 't', 'UH1': 'ʊ', 'ZH': 'ʒ', 'A01': 'ɒ', 'SH': 'ʃ', 'G': 'ɡ', 'B': 'b', 'k': 'k', 'AA2': 'ɑ', 'EY1': 'eɪ', 'AA': 'ɑ', 'EI': 'eɪ', 'AW1': 'aʊ', 'ER0': 'eə', 'Y': 'y', 'IH2': 'ɪ', 'AE2': 'æ', 'CH': 'tʃ', 'A02': 'ɒ', 'AE': 'æ', 'UW2': 'u', 'DH': 'ð', 'EH0': 'ɛ', 'P': 'p', 'F': 'f', 'AH0': 'ə', 'E': '(...)', 'd': 'd', 'EY2': 'eɪ', 'OW0': 'əʊ', 'IY0': 'i', 'NG': 'ŋ', 'AE0': 'æ', 'JH': 'dʒ', 'AY1': 'aɪ', 'AO1': 'ɒ', 'OW2': 'əʊ', 'EY': 'æ', 'sp': '(...)', 'sil': '(...)', 'IY1': 'i', 'AH2': 'ɐ', 'ER1': 'eə', 'OW1': 'əʊ', 'K': 'k', 'L': 'l', 'EH1': 'ɛ', 'OU': 'əʊ', 'AA1': 'ɑ', 'AY': 'aɪ', 'AW2': 'aʊ', 'R': 'r', 'HH': 'h', 'H': 'h', 'IH1': 'ɪ', 'UW1': 'u', 'S': 's', '3': '(...)', 'EY0': 'eɪ', 'IH0': 'ɪ', 'Z': 'z', 'W': 'w', 'AH1': 'ɐ', 'AY2': 'aɪ', 'N': 'n', 'AO2': 'ɒ', 'UW': 'u', 'EH2': 'ɛ', 'V': 'v', 'U': 'u', 'IY2': 'i', 'A0': 'ɒ', 'AE1': 'æ', 'UW0': 'u', 'TH': 'θ', 'M': 'm', 'A': 'ɑ', 'D': 'd', 'UH': 'ɐ', 'IH': 'ɪ', 'ER': 'eə', 'AH': '(...)', 'OW': 'aʊ', 'IY': 'i', 'EH': 'ɛ', 'AI': 'aɪ', 'AW': 'aʊ'}
+    diphthongs = {'OY1', 'EY1', 'EI', 'AW1', 'EY2', 'OW0', 'AY1', 'OW2', 'OW1', 'OU', 'AY', 'AW2', 'EY0', 'AY2', 'OW', 'AI', 'AW', 'ER', 'ER0', 'ER1'}
     rows = []
     for label in labels:
         index, label_name = label.split("_")
@@ -100,15 +101,78 @@ def _prepare_torgo(torgo_path: Path):
             grid_path = audio_path.with_suffix(".TextGrid")
             grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=False)
             for entry in grid.getTier("phones").entries:
+                if entry.label not in diphthongs:
+                    rows.append({
+                        "audio": audio_path,
+                        "label": index,
+                        "label_name": label_name,
+                        "min": entry.start,
+                        "max": entry.end,
+                        "phone": vocab[entry.label],
+                    })
+                else:
+                    rows.append({
+                        "audio": audio_path,
+                        "label": index,
+                        "label_name": label_name,
+                        "min": entry.start,
+                        "max": (entry.start + entry.end) / 2,
+                        "phone": vocab[entry.label][0],
+                    })
+                    rows.append({
+                        "audio": audio_path,
+                        "label": index,
+                        "label_name": label_name,
+                        "min": (entry.start + entry.end) / 2,
+                        "max": entry.end,
+                        "phone": vocab[entry.label][1],
+                    })
+
+            audio_length = librosa.get_duration(filename=audio_path, sr=16000)
+            if entry.end < audio_length:
+                rows.append({
+                    "audio": audio_path,
+                    "label": index,
+                    "label_name": label_name,
+                    "min": entry.end,
+                    "max": audio_length,
+                    "phone": "(...)",
+                })
+    return pd.DataFrame(rows)
+
+
+def _prepare_uaspeech(uaspeech_path: Path):
+    labels = ("0_healthy", "1_mild", "2_moderate", "3_severe", "4_profound")
+    vocab  = {
+        "spn": "(...)", "aj": "aɪ", "aw": "aʊ",
+        "c": "k", "cʰ": "k", "d̪": "d", "ej": "(...)",
+        "kʰ": "k", "m̩": "m", "n̩": "n", "ow": "əʊ",
+        "pʰ": "p", "tʰ": "t", "t̪": "t", "ɒː": "ɒ",
+        "ɔj": "ɔɪ", "əw": "əʊ", "ɚ": "r", "ɝ": "r", 
+        "ɟ": "k", "ɫ": "l", "ɫ̩": "l", "ɹ": "r", "ɾ": "r",
+        "ʉ": "u", "ʉː": "u", 
+    }
+
+    rows = []
+    for label in labels:
+        index, label_name = label.split("_")
+        index = int(index)
+
+        for audio_path in (uaspeech_path / label).glob("**/*.wav"):
+            grid_path = audio_path.with_suffix(".TextGrid")
+            if not grid_path.exists():
+                print(grid_path)
+                continue
+            grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=False)
+            for entry in grid.getTier("phones").entries:
                 rows.append({
                     "audio": audio_path,
                     "label": index,
                     "label_name": label_name,
                     "min": entry.start,
                     "max": entry.end,
-                    "phone": vocab[entry.label],
+                    "phone": vocab.get(entry.label, entry.label),
                 })
-
             audio_length = librosa.get_duration(filename=audio_path, sr=16000)
             if entry.end < audio_length:
                 rows.append({
@@ -163,10 +227,10 @@ def _prepare_l2arctic(l2arctic_path: Path):
 
     vocab = {'': '(...)', 'AA': 'ɑ', 'AE': 'æ', 'AH': 'ʌ', 'AO': 'ɔ', 'AW': 'aʊ', 'AY': 'aɪ', 'B': 'b', 'CH': 'tʃ', 'D': 'd', 'DH': 'ð', 'EH': 'ɛ', 'ER': 'ɜː', 'EY': 'eɪ', 'F': 'f', 'G': 'ɡ', 'HH': 'h', 'IH': 'ɪ', 'IY': 'i', 'JH': 'dʒ', 'K': 'k', 'L': 'lʲ', 'M': 'm', 'N': 'n', 'NG': 'ŋ', 'OW': 'əʊ', 'OY': 'ɔɪ', 'P': 'p', 'R': 'r', 'S': 's', 'SH': 'ʃ', 'T': 't', 'TH': 'θ', 'UH': 'ʊ', 'UW': 'u', 'V': 'v', 'W': 'w', 'Y': 'j', 'Z': 'z', 'ZH': 'ʒ', 'sil': '(...)', 'sp': '(...)', 'spn': '(...)'}
 
-    for audio_path in l2arctic_path.glob("*/wav/*.wav"):
-        grid_path = str(audio_path).replace("/wav/", "/textgrid/").replace(".wav", ".TextGrid")
+    for grid_path in l2arctic_path.glob("*/annotation/*.TextGrid"):
+        audio_path = str(grid_path).replace("/annotation/", "/wav/").replace(".TextGrid", ".wav")
         grid = praatio.textgrid.openTextgrid(grid_path, includeEmptyIntervals=True)
-        speaker = audio_path.parent.parent.name
+        speaker = grid_path.parent.parent.name
         if speaker in ("NJS", "TLV", "TNI", "ZHAA"):
             split = "test"
         elif speaker in ("TXHC", "YKWK"):
@@ -216,7 +280,7 @@ class PhoneRecognitionDataset(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     args = _get_args()
-    _prepare = {"commonphone": _prepare_commonphone, "ssnce": _prepare_ssnce, "torgo": _prepare_torgo, "qolt": _prepare_qolt, "l2arctic": _prepare_l2arctic}[args.dataset_type]
+    _prepare = {"commonphone": _prepare_commonphone, "ssnce": _prepare_ssnce, "torgo": _prepare_torgo, "qolt": _prepare_qolt, "l2arctic": _prepare_l2arctic, "uaspeech": _prepare_uaspeech}[args.dataset_type]
     df = _prepare(args.dataset_path)
     csv_path = args.output_path / f"{args.dataset_type}.csv.gz"
     df.to_csv(csv_path, index=False, compression="gzip")
