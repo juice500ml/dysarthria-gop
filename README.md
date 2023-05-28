@@ -1,6 +1,40 @@
 # Speech Intelligibility Assessment of Dysarthric Speech by using Goodness of Pronunciation with Uncertainty Quantification
 Official implementation of the paper.
 
+## How to run
+```
+# Dataset cleansing
+python3 dataset.py --output_path /path/to/output --dataset_path /path/to/dataset --dataset_type commonphone
+python3 dataset.py --output_path /path/to/output --dataset_path /path/to/dataset --dataset_type l2arctic
+python3 dataset.py --output_path /path/to/output --dataset_path /path/to/dataset --dataset_type ssnce
+python3 dataset.py --output_path /path/to/output --dataset_path /path/to/dataset --dataset_type qolt
+python3 dataset.py --output_path /path/to/output --dataset_path /path/to/dataset --dataset_type uaspeech
+# You have to manually merge l2arctic & commonphone
+
+# Train phone recognizer
+python3 train_phone_recognizer.py \
+    --exp_name both_phonewise_morereducevocab_average \
+    --num_epochs 4 \
+    --learning_rate 0.001 \
+    --loss phonewise_average \
+    --gpu 0 \
+    --model facebook/wav2vec2-xls-r-300m \
+    --use_conv_only True \
+    --batch_size 4 \
+    --commonphone_csv /path/to/commonphone_l2arctic.csv.gz \
+    --reduce_vocab True
+
+# Evaluate gop
+for dataset in uaspeech qolt ssnce
+do
+    python3 gop.py \
+        --dataset_csv /path/to/$dataset.csv.gz \
+        --commonphone_csv /path/to/commonphone_l2arctic.csv.gz \
+        --gpu 0 \
+        --model_path /path/to/model
+done
+```
+
 ## Full phone Kendall's tau table per langauge
 ```
 - English
