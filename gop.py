@@ -94,7 +94,7 @@ def _phonewise_loop(labels: torch.LongTensor, ignore_label: int):
     uniq, loc = torch.unique_consecutive(
         labels, return_inverse=True)
     for i, v in enumerate(uniq):
-        if i != ignore_label:
+        if v.item() != ignore_label:
             mask = (loc == i).numpy()
             yield v.item(), mask
 
