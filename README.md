@@ -1,6 +1,7 @@
 # Speech Intelligibility Assessment of Dysarthric Speech by using Goodness of Pronunciation with Uncertainty Quantification
-Official implementation of the paper, accepted at Interspeech 2023.
-https://arxiv.org/abs/2305.18392
+- Official implementation of the paper, accepted at Interspeech 2023.
+- Arxiv: https://arxiv.org/abs/2305.18392
+- Interspeech Slides: [slides.pdf](./slides.pdf)
 
 ## How to run
 ```
