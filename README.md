@@ -1,6 +1,6 @@
 # Speech Intelligibility Assessment of Dysarthric Speech by using Goodness of Pronunciation with Uncertainty Quantification
 - Official implementation of the paper, accepted at Interspeech 2023.
-   - Yeo, E.J., Choi, K., Kim, S., Chung, M. (2023) Speech Intelligibility Assessment of Dysarthric Speech by using Goodness of Pronunciation with Uncertainty Quantification. *Proc. INTERSPEECH 2023*, 166-170, doi: 10.21437/Interspeech.2023-173
+   - Yeo, E.J., Choi, K., Kim, S., Chung, M. (2023) Speech Intelligibility Assessment of Dysarthric Speech by using Goodness of Pronunciation with Uncertainty Quantification. *Proc. INTERSPEECH 2023*, 166-170, doi: 10.21437/Interspeech.2023-173 [[paper]](https://www.isca-archive.org/interspeech_2023/yeo23_interspeech.pdf)
 - Interspeech Slides: [slides.pdf](./slides.pdf)
 
 ## How to run
